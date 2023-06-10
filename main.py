@@ -12,9 +12,9 @@ OBJECT_DETECTION_MODEL_PATH = "models/best.pt"
 PREDICTOR_MODEL_PATH = "models/keras_model.h5"
 CLASS_NAMES = {0: 'NoSeatbelt', 1: 'Seatbelt'}
 
-SKIP_FRAMES = 2 # skips every 2 frames
+SKIP_FRAMES = 1 # skips every 2 frames
 MAX_FRAME_RECORD = 500
-INPUT_VIDEO = 'sample/test_2.mp4'
+INPUT_VIDEO = 0 #'sample/test_2.mp4'
 OUTPUT_FILE = 'output/test_result_'+ dt.datetime.strftime(dt.datetime.now(), "%Y%m%d%H%M%S") +'.mp4'
 
 COLOR_GREEN = (0, 255, 0)
@@ -81,15 +81,23 @@ while True:
                 
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             writer.write(img)
+            cv2.imshow('Video feed', img)
 
             if frame_count > MAX_FRAME_RECORD:
                 break
     else:
+        break
+
+    # press the 'q' button to stop the video feed 
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
     
     
 
 cap.release()
 writer.release()
+
+# Destroy all the windows
+cv2.destroyAllWindows()
 
 print("Script run complete. Results saved to :", OUTPUT_FILE)

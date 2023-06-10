@@ -1,0 +1,4 @@
+tensorflow==2.12.0
+torch==2.0.1
+yolov5==7.0.12
+Pillow==9.5.0

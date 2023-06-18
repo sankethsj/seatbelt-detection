@@ -10,7 +10,9 @@ print("Script loaded. Import complete")
 
 OBJECT_DETECTION_MODEL_PATH = "models/best.pt"
 PREDICTOR_MODEL_PATH = "models/keras_model.h5"
-CLASS_NAMES = {0: 'NoSeatbelt', 1: 'Seatbelt'}
+CLASS_NAMES = {0: 'No Seatbelt worn', 1: 'Seatbelt Worn'}
+
+THRESHOLD_SCORE = 0.99
 
 SKIP_FRAMES = 1 # skips every 2 frames
 MAX_FRAME_RECORD = 500
@@ -42,7 +44,7 @@ frame_height = int(cap.get(4))
 size = (frame_width, frame_height)
 
 os.makedirs(OUTPUT_FILE.rsplit("/", 1)[0], exist_ok=True)
-writer = cv2.VideoWriter(OUTPUT_FILE, cv2.VideoWriter_fourcc(*'MP4V'), 30, size)
+# writer = cv2.VideoWriter(OUTPUT_FILE, cv2.VideoWriter_fourcc(*'MP4V'), 30, size)
 
 print("Analyzing input video...")
 
@@ -76,15 +78,16 @@ while True:
                 elif y_pred == CLASS_NAMES[1]:
                     draw_color = COLOR_GREEN
 
-                cv2.rectangle(img, (x1, y1), (x2, y2), draw_color, 2)
-                cv2.putText(img, f'{y_pred} {str(score)[:4]}', (x1-10, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 1, draw_color, 2)
+                if score >= THRESHOLD_SCORE:
+                    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(img, f'{y_pred} {str(score)[:4]}', (x1-10, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 1, draw_color, 2)
                 
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            writer.write(img)
+            # writer.write(img)
             cv2.imshow('Video feed', img)
 
-            if frame_count > MAX_FRAME_RECORD:
-                break
+            # if frame_count > MAX_FRAME_RECORD:
+            #     break
     else:
         break
 
@@ -95,7 +98,7 @@ while True:
     
 
 cap.release()
-writer.release()
+# writer.release()
 
 # Destroy all the windows
 cv2.destroyAllWindows()

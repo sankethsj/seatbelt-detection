@@ -1,8 +1,17 @@
 import cv2
 import os
+
+# oneDNN custom operations are on.
+# You may see slightly different numerical results due to floating-point round-off errors from different computation orders.
+# To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
 import datetime as dt
 import numpy as np
 import tensorflow as tf
+
+print("Tensorflow version:", tf.__version__)
+
 import torch
 from keras.models import load_model
 
@@ -10,92 +19,142 @@ print("Script loaded. Import complete")
 
 OBJECT_DETECTION_MODEL_PATH = "models/best.pt"
 PREDICTOR_MODEL_PATH = "models/keras_model.h5"
-CLASS_NAMES = {0: 'No Seatbelt worn', 1: 'Seatbelt Worn'}
+CLASS_NAMES = {0: "No Seatbelt worn", 1: "Seatbelt Worn"}
 
+# Threshold score for the predictor model
 THRESHOLD_SCORE = 0.99
 
-SKIP_FRAMES = 1 # skips every 2 frames
+SKIP_FRAMES = 1  # skips every 2 frames
 MAX_FRAME_RECORD = 500
-INPUT_VIDEO = 0 #'sample/test_2.mp4'
-OUTPUT_FILE = 'output/test_result_'+ dt.datetime.strftime(dt.datetime.now(), "%Y%m%d%H%M%S") +'.mp4'
+INPUT_VIDEO = 'sample/test_2.mp4'
+OUTPUT_FILE = (
+    "output/test_result_"
+    + dt.datetime.strftime(dt.datetime.now(), "%Y%m%d%H%M%S")
+    + ".mp4"
+)
 
+# Colors for drawing bounding boxes
 COLOR_GREEN = (0, 255, 0)
 COLOR_RED = (255, 0, 0)
 
+# Function to predict the class of a given image
 def prediction_func(img):
+    # Resize the image
     img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
-    img = (img/127.5)-1
+    # Normalize the image
+    img = (img / 127.5) - 1
+    # Expand the image
     img = tf.expand_dims(img, axis=0)
+    # Predict the class
     pred = predictor.predict(img)
+    # Get the index of the class with the highest score
     index = np.argmax(pred)
+    # Get the name of the class
     class_name = CLASS_NAMES[index]
+    # Get the confidence score of the class
     confidence_score = pred[0][index]
     return class_name, confidence_score
 
+# Load the predictor model
 predictor = load_model(PREDICTOR_MODEL_PATH, compile=False)
 print("Predictor loaded")
 
 # Ultralytics object detection model : https://docs.ultralytics.com/yolov5/
-model = torch.hub.load("ultralytics/yolov5", "custom", path=OBJECT_DETECTION_MODEL_PATH, force_reload=False)
+model = torch.hub.load(
+    "ultralytics/yolov5", "custom", path=OBJECT_DETECTION_MODEL_PATH, force_reload=True
+)
 
+# Load the video capture
 cap = cv2.VideoCapture(INPUT_VIDEO)
+# Get the frame width and height
 frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
+# Get the size of the video
 size = (frame_width, frame_height)
 
+# Create the output directory if it doesn't exist
 os.makedirs(OUTPUT_FILE.rsplit("/", 1)[0], exist_ok=True)
+# Create the video writer
 # writer = cv2.VideoWriter(OUTPUT_FILE, cv2.VideoWriter_fourcc(*'MP4V'), 30, size)
 
 print("Analyzing input video...")
 
+# Function to draw a bounding box on an image
+def draw_bounding_box(img, x1, y1, x2, y2, color):
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+# Function to draw text on an image
+def draw_text(img, x, y, text, color):
+    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+# Function to classify the driver in an image
+def classify_driver(img):
+    y_pred, score = prediction_func(img)
+    # If the class is 0 (no seatbelt worn), draw red bounding box
+    if y_pred == CLASS_NAMES[0]:
+        draw_color = COLOR_RED
+    # If the class is 1 (seatbelt worn), draw green bounding box
+    elif y_pred == CLASS_NAMES[1]:
+        draw_color = COLOR_GREEN
+    return y_pred, score, draw_color
+
+# Function to process a frame from the video
+def process_frame(frame):
+    # Convert the frame to RGB
+    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Run the object detection model
+    results = model(img)
+    # Get the bounding boxes
+    boxes = results.xyxy[0]
+    # Convert the bounding boxes to numpy
+    boxes = boxes.cpu()
+    # Iterate over the bounding boxes
+    for j in boxes:
+        # Get the coordinates of the bounding box
+        x1, y1, x2, y2, score, y_pred = j.numpy()
+        # Convert the coordinates to integers
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+        # Crop the image to the bounding box
+        img_crop = img[y1:y2, x1:x2]
+
+        # Classify the driver in the cropped image
+        y_pred, score, draw_color = classify_driver(img_crop)
+
+        # If the score is above the threshold, draw the bounding box
+        if score >= THRESHOLD_SCORE:
+            draw_bounding_box(frame, x1, y1, x2, y2, draw_color)
+            draw_text(frame, x1 - 10, y1 - 10, f"{y_pred} {str(score)[:4]}", draw_color)
+    return frame
+
+# Initialize the frame count
 frame_count = 0
+# While the video is not finished
 while True:
+    # Read a frame from the video
+    ret, frame = cap.read()
 
-    ret, img = cap.read()
-
+    # If the frame is read successfully
     if ret:
-
+        # Increment the frame count
         frame_count += 1
 
+        # If the frame count is a multiple of the skip frames, process the frame
         if frame_count % SKIP_FRAMES == 0:
-            # read each frame
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            # detects driver
-            results = model(img)
+            frame = process_frame(frame)
 
-            boxes = results.xyxy[0]
-            boxes = boxes.cpu()
-            for j in boxes:
-                x1, y1, x2, y2, score, y_pred = j.numpy()
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                img_crop = img[y1:y2, x1:x2]
+        # Show the frame
+        cv2.imshow("Video feed", frame)
 
-                # predictor to classify whether driver is wearing seatbelt or not
-                y_pred, score = prediction_func(img_crop)
-
-                if y_pred == CLASS_NAMES[0]:
-                    draw_color = COLOR_RED
-                elif y_pred == CLASS_NAMES[1]:
-                    draw_color = COLOR_GREEN
-
-                if score >= THRESHOLD_SCORE:
-                    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    cv2.putText(img, f'{y_pred} {str(score)[:4]}', (x1-10, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 1, draw_color, 2)
-                
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            # writer.write(img)
-            cv2.imshow('Video feed', img)
-
-            # if frame_count > MAX_FRAME_RECORD:
-            #     break
+        # If the frame count is above the maximum frame record, break
+        if frame_count > MAX_FRAME_RECORD:
+            break
     else:
         break
 
-    # press the 'q' button to stop the video feed 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    # If the user presses q, break
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
-    
-    
+
 
 cap.release()
 # writer.release()

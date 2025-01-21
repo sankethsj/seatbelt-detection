@@ -1,5 +1,10 @@
 import cv2
 import os
+import datetime as dt
+import numpy as np
+import tensorflow as tf
+import torch
+from keras.models import load_model
 
 # oneDNN custom operations are on.
 # You may see slightly different numerical results due to floating-point round-off errors from different computation orders.
@@ -21,19 +26,18 @@ OBJECT_DETECTION_MODEL_PATH = "models/best.pt"
 PREDICTOR_MODEL_PATH = "models/keras_model.h5"
 CLASS_NAMES = {0: "No Seatbelt worn", 1: "Seatbelt Worn"}
 
-# Threshold score for the predictor model
-THRESHOLD_SCORE = 0.99
-
-SKIP_FRAMES = 1  # skips every 2 frames
-MAX_FRAME_RECORD = 500
+# Configuration settings
+THRESHOLD_SCORE = 0.99  # Configurable threshold for confidence scores
+SKIP_FRAMES = 1         # Process every Nth frame
+MAX_FRAME_RECORD = 500  # Maximum frames to process
 INPUT_VIDEO = 'sample/test_2.mp4'
-OUTPUT_FILE = (
-    "output/test_result_"
-    + dt.datetime.strftime(dt.datetime.now(), "%Y%m%d%H%M%S")
-    + ".mp4"
+OUTPUT_DIR = "output"
+OUTPUT_FILE = os.path.join(
+    OUTPUT_DIR,
+    "test_result_" + dt.datetime.now().strftime("%Y%m%d%H%M%S") + ".mp4"
 )
-
 # Colors for drawing bounding boxes
+CLASS_NAMES = {0: "No Seatbelt Worn", 1: "Seatbelt Worn"}
 COLOR_GREEN = (0, 255, 0)
 COLOR_RED = (255, 0, 0)
 
@@ -56,28 +60,33 @@ def prediction_func(img):
     return class_name, confidence_score
 
 # Load the predictor model
-predictor = load_model(PREDICTOR_MODEL_PATH, compile=False)
-print("Predictor loaded")
+try:
+    predictor = load_model("models/keras_model.h5", compile=False)
+    print("Predictor model loaded successfully.")
+except Exception as e:
+    print(f"Error loading predictor model: {e}")
+    exit()
 
 # Ultralytics object detection model : https://docs.ultralytics.com/yolov5/
-model = torch.hub.load(
-    "ultralytics/yolov5", "custom", path=OBJECT_DETECTION_MODEL_PATH, force_reload=True
-)
+try:
+    model = torch.hub.load(
+        "ultralytics/yolov5", "custom", path="models/best.pt", force_reload=True
+    )
+    print("Object detection model loaded successfully.")
+except Exception as e:
+    print(f"Error loading object detection model: {e}")
+    exit()
 
-# Load the video capture
+# Create output directory if not exists
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Load video
 cap = cv2.VideoCapture(INPUT_VIDEO)
-# Get the frame width and height
-frame_width = int(cap.get(3))
-frame_height = int(cap.get(4))
-# Get the size of the video
+frame_width, frame_height = int(cap.get(3)), int(cap.get(4))
 size = (frame_width, frame_height)
+writer = cv2.VideoWriter(OUTPUT_FILE, cv2.VideoWriter_fourcc(*'MP4V'), 30, size)
 
-# Create the output directory if it doesn't exist
-os.makedirs(OUTPUT_FILE.rsplit("/", 1)[0], exist_ok=True)
-# Create the video writer
-# writer = cv2.VideoWriter(OUTPUT_FILE, cv2.VideoWriter_fourcc(*'MP4V'), 30, size)
-
-print("Analyzing input video...")
+print(f"Processing video: {INPUT_VIDEO}")
 
 # Function to draw a bounding box on an image
 def draw_bounding_box(img, x1, y1, x2, y2, color):
